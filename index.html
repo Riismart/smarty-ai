@@ -67,7 +67,7 @@ body::before{content:"";position:fixed;inset:0;background:radial-gradient(circle
 <script>
 const $=s=>document.querySelector(s);
 const KEY="smarty_v3",KK="smarty_gkey",MODELS=["gemini-2.5-flash","gemini-2.0-flash"];
-let st={notes:"",hist:[]},gk="",speak=true,busy=false,turns=0,listening=false,hands=false,li=0,rec=null,talking=false,awakeUntil=0;
+let st={notes:"",hist:[]},gk="",speak=true,busy=false,turns=0,listening=false,hands=false,li=0,rec=null,talking=false,awakeUntil=0,silT=0;
 try{const s=JSON.parse(localStorage.getItem(KEY)||"null");if(s&&s.hist)st=s;gk=localStorage.getItem(KK)||""}catch(e){}
 function save(){try{localStorage.setItem(KEY,JSON.stringify({notes:st.notes,hist:st.hist.slice(-40)}))}catch(e){}}
 function state(c,txt){$("#orb").className="orb "+c;$("#st").textContent=txt}
@@ -112,20 +112,20 @@ function sayShort(t){
 const SYS=()=>`You are Smarty, a warm, caring personal companion and friend of one person, talking to him by voice and text on his phone. Current date and time: ${new Date().toLocaleString()}.
 RULES:
 - Always reply in the same language and script the person used in his latest message (Hindi, Hinglish in Roman letters, English, Gujarati, Urdu, anything). Never ask which language he prefers. If he switches language, you switch too.
-- Talk like a real human friend: natural, short, warm, no lists, no markdown, no emojis, usually 1 to 3 short sentences because your words are spoken aloud and speed matters. Ask about his day and feelings now and then, one question at a time.
+- Talk like a real human friend: natural, short, warm, no lists, no markdown, no emojis, usually 1 to 2 short sentences because your words are spoken aloud and speed matters. Ask about his day and feelings now and then, one question at a time.
 - Do what he asks when you can. Be honest: if you cannot do something yet (setting alarms, reading phone notifications, using the camera), say so simply; those come in a later version of this app.
 - Be a real friend, not a yes-man: if something he plans could hurt him, say so kindly and clearly. Gently encourage him to also stay connected with real people in his life.
 - Use the notes below to remember him.`;
 const BASE="https://generativelanguage.googleapis.com/v1beta/models/";
 async function pickModels(){
-  try{const c=JSON.parse(localStorage.getItem("smarty_models2")||"null");if(c&&c.t>Date.now()-864e5&&c.l.length)return c.l}catch(e){}
+  try{const c=JSON.parse(localStorage.getItem("smarty_models3")||"null");if(c&&c.t>Date.now()-864e5&&c.l.length)return c.l}catch(e){}
   let r,j;
   try{r=await fetch("https://generativelanguage.googleapis.com/v1beta/models?pageSize=200&key="+encodeURIComponent(gk));j=await r.json().catch(()=>({}))}catch(e){throw {code:"net"}}
   if(!r.ok)throw {code:r.status,msg:(j.error&&j.error.message)||""};
   const v=n=>{const x=n.match(/(\d+(?:\.\d+)?)/);return x?parseFloat(x[1]):0};
   let l=(j.models||[]).filter(m=>(m.supportedGenerationMethods||[]).includes("generateContent")).map(m=>m.name.replace("models/","")).filter(n=>/flash/.test(n)&&!/lite|image|tts|live|audio|thinking|exp|preview|robotics|computer|embedding|latest/.test(n)).sort((x,y)=>v(y)-v(x)).slice(0,3);
-  l=l.concat(["gemini-2.5-flash-lite","gemini-flash-lite-latest"]);
-  try{localStorage.setItem("smarty_models2",JSON.stringify({t:Date.now(),l}))}catch(e){}
+  l=["gemini-2.5-flash-lite"].concat(l,["gemini-flash-lite-latest"]);
+  try{localStorage.setItem("smarty_models3",JSON.stringify({t:Date.now(),l}))}catch(e){}
   return l;
 }
 const RETRY=[404,429,500,502,503,504];
@@ -135,7 +135,7 @@ async function gemStream(system,msgs,onText){
   for(let attempt=0;attempt<3;attempt++){
     for(const m of models){
       try{
-        const gc={maxOutputTokens:350};
+        const gc={maxOutputTokens:200};
         if(/2\.5/.test(m)&&!/pro/.test(m))gc.thinkingConfig={thinkingBudget:0};
         const r=await fetch(BASE+m+":streamGenerateContent?alt=sse&key="+encodeURIComponent(gk),{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({systemInstruction:{parts:[{text:system}]},contents:msgs,generationConfig:gc})});
         if(!r.ok){const j=await r.json().catch(()=>({}));last={code:r.status,msg:(j.error&&j.error.message)||""};if(RETRY.includes(r.status))continue;throw last}
@@ -159,7 +159,7 @@ async function gemStream(system,msgs,onText){
     }
     await new Promise(res=>setTimeout(res,1500));
   }
-  try{localStorage.removeItem("smarty_models2")}catch(e){}
+  try{localStorage.removeItem("smarty_models3")}catch(e){}
   throw last||{code:"net"};
 }
 const gem=(sys,msgs)=>gemStream(sys,msgs,()=>{});
@@ -171,7 +171,7 @@ async function send(text){
   $("#t").value="";busy=true;state("think","soch raha hoon");
   bubble("user",text);st.hist.push({role:"user",text});
   const el=bubble("a","…");
-  const msgs=st.hist.slice(-20).map(m=>({role:m.role==="user"?"user":"model",parts:[{text:m.text}]}));
+  const msgs=st.hist.slice(-10).map(m=>({role:m.role==="user"?"user":"model",parts:[{text:m.text}]}));
   try{
     const out=await gemStream(SYS()+"\n\nNOTES ABOUT HIM:\n"+(st.notes||"(nothing yet)"),msgs,full=>{el.textContent=full;$("#log").scrollTop=1e9;spFeed(full,false)});
     el.textContent=out;st.hist.push({role:"assistant",text:out});save();busy=false;
@@ -195,10 +195,10 @@ function recStart(){
   if(!SR||listening||busy)return;
   try{
     rec=new SR();rec.lang=LANGS[li];rec.interimResults=true;rec.continuous=false;
-    rec.onresult=e=>{let t="";for(const r of e.results)t+=r[0].transcript;$("#t").value=t};
+    rec.onresult=e=>{let t="";for(const r of e.results)t+=r[0].transcript;$("#t").value=t;clearTimeout(silT);silT=setTimeout(()=>{try{rec.stop()}catch(x){}},1100)};
     rec.onstart=()=>{listening=true;$("#mic").classList.add("on");state("listen",hands&&Date.now()>awakeUntil?"keh do: hi smarty":"sun raha hoon")};
     rec.onend=()=>{
-      listening=false;$("#mic").classList.remove("on");
+      clearTimeout(silT);listening=false;$("#mic").classList.remove("on");
       const text=$("#t").value.trim();
       if(!text){idle();if(hands&&!busy&&!talking)setTimeout(recStart,300);return}
       if(!hands){send(text);return}
