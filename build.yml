@@ -1,0 +1,44 @@
+name: Build Smarty APK
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'MainActivity.kt'
+      - 'AndroidManifest.xml'
+      - 'app-build.gradle.kts'
+      - 'root-build.gradle.kts'
+      - 'settings.gradle.kts'
+      - 'gradle.properties'
+      - '.github/workflows/build.yml'
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+      - name: Arrange project
+        run: |
+          mkdir -p proj/app/src/main/java/com/smarty/app
+          cp settings.gradle.kts proj/settings.gradle.kts
+          cp root-build.gradle.kts proj/build.gradle.kts
+          cp gradle.properties proj/gradle.properties
+          cp app-build.gradle.kts proj/app/build.gradle.kts
+          cp AndroidManifest.xml proj/app/src/main/AndroidManifest.xml
+          cp MainActivity.kt proj/app/src/main/java/com/smarty/app/MainActivity.kt
+      - name: Build APK
+        working-directory: proj
+        run: gradle assembleDebug --no-daemon
+      - name: Publish APK
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cp proj/app/build/outputs/apk/debug/app-debug.apk Smarty.apk
+          gh release create "v${{ github.run_number }}" Smarty.apk --title "Smarty v${{ github.run_number }}" --notes "Smarty app"
